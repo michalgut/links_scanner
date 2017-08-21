@@ -1,0 +1,6 @@
+browser: chrome
+page-load-timeout-seconds: 10
+url: http://nomadstudio.pl
+is-angular: false
+scan-depth: 5
+

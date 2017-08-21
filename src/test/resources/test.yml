@@ -1,0 +1,10 @@
+browser: chrome
+page-load-timeout: 10000
+scan-depth: 5
+is-angular: false
+url: https://login.feature.cinnakube.com
+login:
+  user-selector:
+  user:
+  password-selector:
+  password:

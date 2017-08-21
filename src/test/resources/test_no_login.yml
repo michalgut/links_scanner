@@ -1,0 +1,3 @@
+browser: chrome
+page-load-timeout: 10000
+url: https://login.feature.cinnakube.com
