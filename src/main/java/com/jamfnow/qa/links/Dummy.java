@@ -12,13 +12,20 @@ import org.openqa.selenium.remote.RemoteWebDriver;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class Dummy {
 
+    private RemoteWebDriver driver;
+    private String hostUrl;
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) throws IOException {
+        new Dummy().run();
+    }
+
+    public void run() throws IOException {
         File file = new File(Dummy.class.getClassLoader().getResource("test_nomad.yml").getFile());
         LinksConfig linksConfig = new ObjectMapper(new YAMLFactory()).readValue(new FileReader(file), LinksConfig.class);
 
@@ -27,39 +34,59 @@ public class Dummy {
                 .usingAnyFreePort().build();
         service.start();
 
-        RemoteWebDriver driver = new RemoteWebDriver(service.getUrl(), DesiredCapabilities.chrome());
+        driver = new RemoteWebDriver(service.getUrl(), DesiredCapabilities.chrome());
+        hostUrl = linksConfig.getUrl().getHost();
 
         driver.manage().timeouts().pageLoadTimeout(linksConfig.getPageLoadTimeout(), TimeUnit.SECONDS);
         driver.executeScript("document.body.style.zoom='75%'");
         driver.get(linksConfig.getUrl().toString());
-
-
-        for (int i = 0; i < linksConfig.getScanDepth(); i++) {
-            for (String window : driver.getWindowHandles()) {
-                driver.switchTo().window(window);
-                if (!driver.getCurrentUrl().contains(linksConfig.getUrl().getHost()) && !driver.getCurrentUrl().equals("about:blank")) {
-                    System.out.println("Visited " + driver.getCurrentUrl() + " and closed since it's not from this page.");
-                    driver.close();
-                }
-            }
-
-            List<WebElement> elements = driver.findElements(By.xpath("//a[@href|@ng-href]|//button"));
-
-            for (WebElement element : elements) {
-                String selectLinkOpeninNewTab = Keys.chord(Keys.COMMAND, Keys.RETURN);
-                element.sendKeys(selectLinkOpeninNewTab);
-            }
-
-            String currentTab = driver.getWindowHandle();
-            String nextTab = driver.getWindowHandles().toArray()[1].toString();
-            for (String window : driver.getWindowHandles()) {
-                driver.switchTo().window(window);
-            }
-            driver.switchTo().window(currentTab).close();
-            driver.switchTo().window(nextTab);
+        try {
+            checkLinks(new LinkedList<>(), linksConfig.getScanDepth());
         }
-
-        driver.quit();
-        service.stop();
+        finally {
+            driver.quit();
+            service.stop();
+        }
     }
+
+    private void checkLinks(final LinkedList<String> windowsStack, final int depthLevelToCheck) {
+        final String nextWindow = driver.getWindowHandles().stream()
+                                        .filter(handle -> !windowsStack.contains(handle))
+                                        .findFirst().get();
+        windowsStack.add(nextWindow);
+        driver.switchTo().window(nextWindow);
+        waitUntilPageStartsLoading();
+        if (!driver.getCurrentUrl().contains(hostUrl) && !driver.getCurrentUrl().equals("about:blank")) {
+            System.out.println("Visited " + driver.getCurrentUrl() + " and closed since it's not from this page.");
+        }
+        else if (depthLevelToCheck < 1) {
+            System.out.println("Visited " + driver.getCurrentUrl() + " and closed since it's the lowest checked depth.");
+        }
+        else {
+            final List<WebElement> elements = driver.findElements(By.xpath("//a[@href|@ng-href]|//button"));
+            for (WebElement element : elements) {
+                final String selectLinkOpenInNewTab = Keys.chord(Keys.COMMAND, Keys.RETURN);
+                element.sendKeys(selectLinkOpenInNewTab);
+                checkLinks(windowsStack, depthLevelToCheck - 1);
+            }
+        }
+        driver.close();
+        windowsStack.removeLast();
+        if (!windowsStack.isEmpty()) {
+            driver.switchTo().window(windowsStack.getLast());
+        }
+    }
+
+    private void waitUntilPageStartsLoading() {
+        //TODO timeout and then rewriting it properly
+        try {
+            while (driver.getCurrentUrl().equals("about:blank")) {
+                Thread.sleep(200);
+            }
+        }
+        catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
